@@ -11,56 +11,51 @@ import io.ktor.http.HttpMethod
 import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
-import java.lang.RuntimeException
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
+import java.lang.RuntimeException
 import java.time.Instant
 import java.util.*
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
-import kotlinx.coroutines.async
+
+const val API_HOST = "https://api.switch-bot.com"
+val client = HttpClient(OkHttp) {
+    install(ContentNegotiation) {
+        json()
+    }
+}
 
 fun main() {
-    val client = HttpClient(OkHttp) {
-        install(ContentNegotiation) {
-            json()
-        }
-    }
-
-    val headers = generateHeaders()
-    val apiHost = "https://api.switch-bot.com"
-    val getDevicesList = "$apiHost/v1.1/devices"
-     println("start request")
-     runBlocking {
-         val responseDeferred = async {
-            client.request(getDevicesList) {
-                method = HttpMethod.Get
-                this.headers.appendAll(headers)
-            } 
-         }
-         val response = responseDeferred.await()
-         println(response.body<Response>())
-
-         val deviceId = response.body<Response>().body?.deviceList?.find { it.deviceType == "Bot" }?.deviceId
+    runBlocking {
+        val deviceList = getDeviceList().deviceList
+        val deviceId = deviceList.find { it.deviceType == "Bot" }?.deviceId
             ?: throw RuntimeException("Botが見つかりませんでした")
-         val sendCommand = "$apiHost/v1.1/devices/$deviceId/commands"
-         val sendCommandDeferred = async {
-            client.request(sendCommand) {
-                method = HttpMethod.Post
-                this.headers.appendAll(headers)
-                contentType(ContentType.Application.Json)
-                setBody(
-                    BotCommand(
-                        command = "turnOn",
-                        parameter = "default",
-                        commandType = "command"
-                    )
-                )
-            }
-         }
-         sendCommandDeferred.await()
-         client.close()
-         println("end request")
+        onBot(deviceId)
+        client.close()
+    }
+}
+
+private suspend fun getDeviceList(): DeviceList {
+    val response = client.request("$API_HOST/v1.1/devices") {
+        method = HttpMethod.Get
+        this.headers.appendAll(generateHeaders())
+    }
+    return response.body<Response>().body ?: throw RuntimeException("デバイス一覧の取得に失敗しました")
+}
+
+private suspend fun onBot(deviceId: String) {
+    client.request("$API_HOST/v1.1/devices/$deviceId/commands") {
+        method = HttpMethod.Post
+        this.headers.appendAll(generateHeaders())
+        contentType(ContentType.Application.Json)
+        setBody(
+            BotCommand(
+                command = "turnOn",
+                parameter = "default",
+                commandType = "command"
+            )
+        )
     }
 }
 
