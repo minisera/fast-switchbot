@@ -4,8 +4,11 @@ import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.headers
 import io.ktor.client.request.request
+import io.ktor.client.request.setBody
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
+import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
@@ -39,12 +42,12 @@ fun main() {
     }
 
     val apiHost = "https://api.switch-bot.com"
-    val url = "$apiHost/v1.1/devices"
+    val getDevicesList = "$apiHost/v1.1/devices"
 
     println("start request")
     runBlocking {
         // 持っているデバイス一覧を取得
-        val response = client.request(url) {
+        val response = client.request(getDevicesList) {
             method = HttpMethod.Get
             headers {
                 append(HttpHeaders.Authorization, openToken)
@@ -53,21 +56,43 @@ fun main() {
                 append("t", time)
             }
         }
-        client.close()
-        println("close request")
 
         println(response.body<Response>())
 
-        if (response.status.value in 200..299) {
-            println("Successful response!")
+        // deviceIdを取得する
+        val deviceId = response.body<Response>().body?.deviceList?.find { it.deviceType == "Bot" }?.deviceId
+        if (deviceId == null) {
+            println("Botが見つかりませんでした")
+            return@runBlocking
         }
+
+        // Botをオンにする
+        val sendCommand = "$apiHost/v1.1/devices/$deviceId/commands"
+        client.request(sendCommand) {
+            method = HttpMethod.Post
+            headers {
+                append(HttpHeaders.Authorization, openToken)
+                append("sign", signature)
+                append("nonce", nonce)
+                append("t", time)
+            }
+            contentType(ContentType.Application.Json)
+            setBody(
+                BotCommand(
+                    command = "turnOn",
+                    parameter = "default",
+                    commandType = "command"
+                )
+            )
+        }
+        client.close()
     }
 }
 
 @Serializable
 data class Response(
     val statusCode: String,
-    val body: DeviceList,
+    val body: DeviceList? = null,
     val message: String
 )
 
@@ -105,4 +130,11 @@ data class KeyListItem(
     val createTime: Long,
     val password: String,
     val iv: String
+)
+
+@Serializable
+data class BotCommand(
+    val command: String,
+    val parameter: String,
+    val commandType: String
 )
