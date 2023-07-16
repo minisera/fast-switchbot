@@ -29,9 +29,19 @@ val client = HttpClient(OkHttp) {
 fun main() {
     runBlocking {
         val deviceList = getDeviceList().deviceList
-        val deviceId = deviceList.find { it.deviceType == "Bot" }?.deviceId
+        println(deviceList)
+        val botDeviceId = deviceList.find { it.deviceType == "Bot" }?.deviceId
             ?: throw RuntimeException("Botが見つかりませんでした")
-        onBot(deviceId)
+        val standLightMainDeviceId = deviceList.find { it.deviceName == "スタンドライトメイン" }?.deviceId
+            ?: throw RuntimeException("スタンドライトメインが見つかりませんでした")
+        val standLightSubDeviceId = deviceList.find { it.deviceName == "スタンドライトサブ" }?.deviceId
+            ?: throw RuntimeException("スタンドライトサブが見つかりませんでした")
+        // スタンドライトメインをオンにする
+        onLight(standLightMainDeviceId)
+        // スタンドライトサブをオンにする
+        onLight(standLightSubDeviceId)
+        // Botをオンにする
+        onLight(botDeviceId)
         client.close()
     }
 }
@@ -44,7 +54,7 @@ private suspend fun getDeviceList(): DeviceList {
     return response.body<Response>().body ?: throw RuntimeException("デバイス一覧の取得に失敗しました")
 }
 
-private suspend fun onBot(deviceId: String) {
+private suspend fun onLight(deviceId: String) {
     client.request("$API_HOST/v1.1/devices/$deviceId/commands") {
         method = HttpMethod.Post
         this.headers.appendAll(generateHeaders())
