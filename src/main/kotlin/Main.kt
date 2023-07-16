@@ -30,19 +30,25 @@ fun main() {
     runBlocking {
         val deviceList = getDeviceList().deviceList
         println(deviceList)
-        val botDeviceId = deviceList.find { it.deviceType == "Bot" }?.deviceId
-            ?: throw RuntimeException("Botが見つかりませんでした")
-        val standLightMainDeviceId = deviceList.find { it.deviceName == "スタンドライトメイン" }?.deviceId
-            ?: throw RuntimeException("スタンドライトメインが見つかりませんでした")
-        val standLightSubDeviceId = deviceList.find { it.deviceName == "スタンドライトサブ" }?.deviceId
-            ?: throw RuntimeException("スタンドライトサブが見つかりませんでした")
-        // スタンドライトメインをオンにする
+        val botDeviceId = findDeviceId(deviceList, "Bot", "deviceType")
+        val standLightMainDeviceId = findDeviceId(deviceList, "スタンドライトメイン", "deviceName")
+        val standLightSubDeviceId = findDeviceId(deviceList, "スタンドライトサブ", "deviceName")
+
         onLight(standLightMainDeviceId)
-        // スタンドライトサブをオンにする
         onLight(standLightSubDeviceId)
-        // Botをオンにする
         onLight(botDeviceId)
+
         client.close()
+    }
+}
+
+private fun findDeviceId(deviceList: List<DeviceListItem>, query: String, searchType: String): String {
+    return when (searchType) {
+        "deviceName" -> deviceList.find { it.deviceName == query }?.deviceId
+            ?: throw RuntimeException("$query が見つかりませんでした")
+        "deviceType" -> deviceList.find { it.deviceType == query }?.deviceId
+            ?: throw RuntimeException("$query が見つかりませんでした")
+        else -> throw RuntimeException("検索タイプが不正です")
     }
 }
 
