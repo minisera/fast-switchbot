@@ -12,7 +12,6 @@ import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.Serializable
 import java.lang.RuntimeException
 import java.time.Instant
 import java.util.*
@@ -28,21 +27,21 @@ val client = HttpClient(OkHttp) {
 
 fun main() {
     runBlocking {
-        val deviceList = getDeviceList().deviceList
+        val deviceList = fetchDeviceList().deviceList
         println(deviceList)
         val botDeviceId = findDeviceId(deviceList, "Bot", "deviceType")
         val standLightMainDeviceId = findDeviceId(deviceList, "スタンドライトメイン", "deviceName")
         val standLightSubDeviceId = findDeviceId(deviceList, "スタンドライトサブ", "deviceName")
 
-        onLight(standLightMainDeviceId)
-        onLight(standLightSubDeviceId)
-        onLight(botDeviceId)
+        turnOnLight(standLightMainDeviceId)
+        turnOnLight(standLightSubDeviceId)
+        turnOnLight(botDeviceId)
 
         client.close()
     }
 }
 
-private fun findDeviceId(deviceList: List<DeviceListItem>, query: String, searchType: String): String {
+private fun findDeviceId(deviceList: List<SwitchBotApi.DeviceListItem>, query: String, searchType: String = "deviceType"): String {
     return when (searchType) {
         "deviceName" -> deviceList.find { it.deviceName == query }?.deviceId
             ?: throw RuntimeException("$query が見つかりませんでした")
@@ -52,26 +51,35 @@ private fun findDeviceId(deviceList: List<DeviceListItem>, query: String, search
     }
 }
 
-private suspend fun getDeviceList(): DeviceList {
-    val response = client.request("$API_HOST/v1.1/devices") {
-        method = HttpMethod.Get
-        this.headers.appendAll(generateHeaders())
+private suspend fun fetchDeviceList(): SwitchBotApi.DeviceList {
+    val response = try {
+        client.request("$API_HOST/v1.1/devices") {
+            method = HttpMethod.Get
+            this.headers.appendAll(generateHeaders())
+        }
+    } catch (e: Exception) {
+        throw RuntimeException("デバイス一覧の取得に失敗しました")
     }
-    return response.body<Response>().body ?: throw RuntimeException("デバイス一覧の取得に失敗しました")
+
+    return response.body<SwitchBotApi.Response>().body ?: throw RuntimeException("デバイス情報がありません")
 }
 
-private suspend fun onLight(deviceId: String) {
-    client.request("$API_HOST/v1.1/devices/$deviceId/commands") {
-        method = HttpMethod.Post
-        this.headers.appendAll(generateHeaders())
-        contentType(ContentType.Application.Json)
-        setBody(
-            BotCommand(
-                command = "turnOn",
-                parameter = "default",
-                commandType = "command"
+private suspend fun turnOnLight(deviceId: String) {
+    try {
+        client.request("$API_HOST/v1.1/devices/$deviceId/commands") {
+            method = HttpMethod.Post
+            this.headers.appendAll(generateHeaders())
+            contentType(ContentType.Application.Json)
+            setBody(
+                SwitchBotApi.Command(
+                    command = "turnOn",
+                    parameter = "default",
+                    commandType = "command"
+                )
             )
-        )
+        }
+    } catch (e: Exception) {
+        throw RuntimeException("ライトのONに失敗しました")
     }
 }
 
@@ -105,53 +113,3 @@ private fun generateHeaders(): Headers {
         append("t", time)
     }
 }
-
-@Serializable
-data class Response(
-    val statusCode: String? = null,
-    val body: DeviceList? = null,
-    val message: String
-)
-
-@Serializable
-data class DeviceList(
-    val deviceList: List<DeviceListItem>,
-    val infraredRemoteList: List<InfraredRemoteListItem>
-)
-
-@Serializable
-data class DeviceListItem(
-    val deviceId: String,
-    val deviceName: String,
-    val deviceType: String,
-    val enableCloudService: String? = null,
-    val hubDeviceId: String,
-    val lockDeviceId: String? = null,
-    val keyList: List<KeyListItem>? = null
-)
-
-@Serializable
-data class InfraredRemoteListItem(
-    val deviceId: String,
-    val deviceName: String,
-    val remoteType: String,
-    val hubDeviceId: String
-)
-
-@Serializable
-data class KeyListItem(
-    val id: Long,
-    val name: String,
-    val type: String,
-    val status: String,
-    val createTime: Long,
-    val password: String,
-    val iv: String
-)
-
-@Serializable
-data class BotCommand(
-    val command: String,
-    val parameter: String,
-    val commandType: String
-)
