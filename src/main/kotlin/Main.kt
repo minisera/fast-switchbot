@@ -12,6 +12,11 @@ import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.io.File
+import java.nio.file.Paths
 import java.time.Instant
 import java.util.*
 import javax.crypto.Mac
@@ -27,16 +32,60 @@ val client = HttpClient(OkHttp) {
 
 fun main() {
     runBlocking {
-        val deviceList = fetchDeviceList().getOrThrow().deviceList
-        println(deviceList)
-        val botDeviceId = findDeviceId(deviceList, "Bot", "deviceType")
-        val standLightMainDeviceId = findDeviceId(deviceList, "スタンドライトメイン", "deviceName")
-        val standLightSubDeviceId = findDeviceId(deviceList, "スタンドライトサブ", "deviceName")
+        val path = Paths.get("${File("").absolutePath}/workflow/device-list.json")
 
-        turnOnLight(standLightMainDeviceId.getOrThrow())
-        turnOnLight(standLightSubDeviceId.getOrThrow())
-        turnOnLight(botDeviceId.getOrThrow())
+        val fileText = try {
+            val file = path.toFile()
+            val time = file.lastModified()
+            val now = Date().time
 
+            // deviceListをJSONファイルにから読み込む
+            // 以下の条件でダンプファイルを更新する
+            // - ダンプファイルが空の場合
+            // - ダンプファイルの更新日時が1日以上前の場合
+            file.readText().let {
+                if (it.isEmpty() || time < now - 24 * 60 * 60 * 1_000) {
+                    val deviceList = fetchDeviceList().getOrThrow().deviceList
+                    val deviceListJson = Json.encodeToString(deviceList)
+                    path.toFile().writeText(deviceListJson)
+                    deviceListJson
+                } else {
+                    it
+                }
+            }
+        } catch (e: Exception) {
+            throw RuntimeException("device-list.jsonの読み込みに失敗しました")
+        }
+
+        val deviceList = try {
+            Json.decodeFromString<List<SwitchBotApi.DeviceListItem>>(fileText)
+        } catch (e: Exception) {
+            throw RuntimeException("device-list.jsonの形式が不正です。")
+        }
+
+        val itemList = deviceList.map {
+            Item(
+                title = it.deviceName,
+                subtitle = it.deviceType,
+                arg = it.deviceId,
+                uid = it.deviceId
+            )
+        }
+
+        val json = Json.encodeToString(Items(items = itemList))
+        // 操作したい家電一覧を表示する
+        // TODO 引数によって操作したい家電を絞り込む
+        println(json)
+
+        // TODO 家電の実行は別スクリプトで行う
+//        println(deviceList)
+//        val botDeviceId = findDeviceId(deviceList, "Bot", "deviceType").getOrThrow()
+//        val standLightMainDeviceId = findDeviceId(deviceList, "スタンドライトメイン", "deviceName").getOrThrow()
+//        val standLightSubDeviceId = findDeviceId(deviceList, "スタンドライトサブ", "deviceName").getOrThrow()
+
+//        turnOnLight(standLightMainDeviceId)
+//        turnOnLight(standLightSubDeviceId)
+//        turnOnLight(botDeviceId)
         client.close()
     }
 }
@@ -120,3 +169,16 @@ private fun generateHeaders(): Headers {
         append("t", time)
     }
 }
+
+@Serializable
+data class Item(
+    val title: String,
+    val subtitle: String = "",
+    val arg: String = "",
+    val uid: String = ""
+)
+
+@Serializable
+data class Items(
+    val items: List<Item>
+)
