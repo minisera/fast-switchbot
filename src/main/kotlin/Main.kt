@@ -12,11 +12,11 @@ import io.ktor.http.contentType
 import io.ktor.http.headers
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.coroutines.runBlocking
-import java.lang.RuntimeException
 import java.time.Instant
 import java.util.*
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
+import kotlin.RuntimeException
 
 const val API_HOST = "https://api.switch-bot.com"
 val client = HttpClient(OkHttp) {
@@ -27,44 +27,49 @@ val client = HttpClient(OkHttp) {
 
 fun main() {
     runBlocking {
-        val deviceList = fetchDeviceList().deviceList
+        val deviceList = fetchDeviceList().getOrThrow().deviceList
         println(deviceList)
         val botDeviceId = findDeviceId(deviceList, "Bot", "deviceType")
         val standLightMainDeviceId = findDeviceId(deviceList, "スタンドライトメイン", "deviceName")
         val standLightSubDeviceId = findDeviceId(deviceList, "スタンドライトサブ", "deviceName")
 
-        turnOnLight(standLightMainDeviceId)
-        turnOnLight(standLightSubDeviceId)
-        turnOnLight(botDeviceId)
+        turnOnLight(standLightMainDeviceId.getOrThrow())
+        turnOnLight(standLightSubDeviceId.getOrThrow())
+        turnOnLight(botDeviceId.getOrThrow())
 
         client.close()
     }
 }
 
-private fun findDeviceId(deviceList: List<SwitchBotApi.DeviceListItem>, query: String, searchType: String = "deviceType"): String {
+private fun findDeviceId(
+    deviceList: List<SwitchBotApi.DeviceListItem>,
+    query: String,
+    searchType: String = "deviceType"
+): Result<String> {
     return when (searchType) {
-        "deviceName" -> deviceList.find { it.deviceName == query }?.deviceId
-            ?: throw RuntimeException("$query が見つかりませんでした")
-        "deviceType" -> deviceList.find { it.deviceType == query }?.deviceId
-            ?: throw RuntimeException("$query が見つかりませんでした")
-        else -> throw RuntimeException("検索タイプが不正です")
+        "deviceName" -> deviceList.find { it.deviceName == query }?.deviceId?.let { Result.success(it) }
+            ?: Result.failure(RuntimeException("$query が見つかりませんでした"))
+        "deviceType" -> deviceList.find { it.deviceType == query }?.deviceId?.let { Result.success(it) }
+            ?: Result.failure(RuntimeException("$query が見つかりませんでした"))
+        else -> Result.failure(RuntimeException("検索タイプが不正です"))
     }
 }
 
-private suspend fun fetchDeviceList(): SwitchBotApi.DeviceList {
+private suspend fun fetchDeviceList(): Result<SwitchBotApi.DeviceList> {
     val response = try {
         client.request("$API_HOST/v1.1/devices") {
             method = HttpMethod.Get
             this.headers.appendAll(generateHeaders())
         }
     } catch (e: Exception) {
-        throw RuntimeException("デバイス一覧の取得に失敗しました")
+        return Result.failure(RuntimeException("デバイス一覧の取得に失敗しました"))
     }
 
-    return response.body<SwitchBotApi.Response>().body ?: throw RuntimeException("デバイス情報がありません")
+    return response.body<SwitchBotApi.Response>().body?.let { Result.success(it) }
+        ?: Result.failure(RuntimeException("デバイスの情報が０件です"))
 }
 
-private suspend fun turnOnLight(deviceId: String) {
+private suspend fun turnOnLight(deviceId: String): Result<Unit> {
     try {
         client.request("$API_HOST/v1.1/devices/$deviceId/commands") {
             method = HttpMethod.Post
@@ -79,8 +84,10 @@ private suspend fun turnOnLight(deviceId: String) {
             )
         }
     } catch (e: Exception) {
-        throw RuntimeException("ライトのONに失敗しました")
+        return Result.failure(RuntimeException("デバイスの操作に失敗しました"))
     }
+
+    return Result.success(Unit)
 }
 
 private fun generateHeaders(): Headers {

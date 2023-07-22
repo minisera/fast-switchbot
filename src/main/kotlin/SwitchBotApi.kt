@@ -1,6 +1,6 @@
 import kotlinx.serialization.Serializable
 
-class SwitchBotApi {
+sealed class SwitchBotApi {
     @Serializable
     data class Response(
         val statusCode: String? = null,
